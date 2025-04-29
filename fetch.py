@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import json
 import pandas as pd
 import os
-from pymongo import MongoClient
+import mysql.connector
 from dotenv import load_dotenv
 import time
 import coordinates
@@ -17,16 +17,20 @@ info_local = []
 
 # Load sensitive information
 load_dotenv('.env')
-host = os.getenv('MONGO_HOST')
-user = os.getenv('MONGO_USER')
-password = os.getenv('MONGO_PASSWORD')
-database_name = os.getenv('MONGO_DATABASE')
-collection_name = os.getenv('MONGO_COLLECTION')
+host = os.getenv('MYSQL_HOST')
+user = os.getenv('MYSQL_USER')
+password = os.getenv('MYSQL_PASSWORD')
+database_name = os.getenv('MYSQL_DATABASE')
+table_name = os.getenv('MYSQL_TABLE')
 
-# Conectar ao MongoDB
-client = MongoClient(f"mongodb://{user}:{password}@{host}:27017/?authSource=admin")
-db = client[database_name]
-collection = db[collection_name]
+# Conectar ao MariaDB
+conn = mysql.connector.connect(
+    host=host,
+    user=user,
+    password=password,
+    database=database_name
+)
+cursor = conn.cursor()
 
 def fetch():
     url = "https://radnet.apambiente.pt/ajax/dashboard/drawChart.php"
@@ -58,30 +62,22 @@ def fetch():
         print(f"Erro na requisição: {response.status_code}")
 
 def store(hour, place, value, latitude, longitude):
-    # Verifica se o valor jÃ¡ existe no MongoDB
-    existing_data = collection.find_one({"value": value, "place": place, "hour": hour})
-    
-    if not existing_data:
-        # Cria o documento a ser inserido
-        radioactivity_data = {
-            "hour": hour,
-            "place": place,
-            "value": float(value),
-            "latitude": latitude,
-            "longitude": longitude
-        }
-        # Insere o documento no MongoDB
-        collection.insert_one(radioactivity_data)
+    # Verifica se o valor já existe no MariaDB
+    cursor.execute(
+        f"SELECT 1 FROM {table_name} WHERE hour=%s AND place=%s AND value=%s",
+        (hour, place, value)
+    )
+    if cursor.fetchone() is None:
+        # Insere os dados na tabela
+        cursor.execute(
+            f"INSERT INTO {table_name} (hour, place, value, latitude, longitude) VALUES (%s, %s, %s, %s, %s)",
+            (hour, place, value, latitude, longitude)
+        )
+        conn.commit()
 
 def data_processing():
     info, hour_init, hour_end = fetch()
     data = json.loads(info)
-    
-    # Save data to JSON file
-    """
-    with open('data/dados.json', 'w') as f:
-        json.dump(data, f, indent=4)
-    """
 
     for i in range(len(data)):
         locals.append(data[i]["label"])
@@ -94,7 +90,6 @@ def data_processing():
     i = 0
     for local in locals:
         j = 0
-        # Retrieve coordinates from the dictionary
         latitude_value, longitude_value = coordinates.coordinates[local]
         value = info_local[i]
         for place in coordinates.coordinates:
@@ -107,6 +102,5 @@ def data_processing():
         store(hour_init, new_place_name, value, latitude_value, longitude_value)
         i += 1
         time.sleep(0.2)
-        
-# Executa o processamento dos dados
+
 # data_processing()
