@@ -8,49 +8,48 @@ from dash.dependencies import Input, Output
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
+import pymysql
 from apscheduler.schedulers.background import BackgroundScheduler
 import time
-import fetch
-
-locals = []
-info_local = []
 
 # Load sensitive information
 load_dotenv('.env')
-host = os.getenv('MONGO_HOST')
-user = os.getenv('MONGO_USER')
-password = os.getenv('MONGO_PASSWORD')
-database_name = os.getenv('MONGO_DATABASE')
-collection_name = os.getenv('MONGO_COLLECTION')
+host = os.getenv('MARIADB_HOST')
+user = os.getenv('MARIADB_USER')
+password = os.getenv('MARIADB_PASSWORD')
+database_name = os.getenv('MARIADB_DATABASE')
 
-# Conectar ao MongoDB
-client = MongoClient(f"mongodb://{user}:{password}@{host}:27017/?authSource=admin")
-db = client[database_name]
-collection = db[collection_name]
+# Connect to MariaDB
+connection = pymysql.connect(
+    host=host,
+    user=user,
+    password=password,
+    database=database_name
+)
+
 def update_data():
-    """Busca os dados do MongoDB e os converte para DataFrame"""
-    data = list(collection.find())  # Pega todos os documentos da coleÃ§Ã£o
-    for item in data:
-        item.pop('_id', None)  # Remove o campo _id que Ã© gerado automaticamente
-    db_df = pd.DataFrame(data)
+    """Fetch the data from MariaDB and convert it to a DataFrame"""
+    query = f"SELECT * FROM {os.getenv('MARIADB_TABLE')}"
+    db_df = pd.read_sql(query, connection)
     return db_df
 
 def get_place(place):
+    """Get the latest data for a specific place"""
     global latest_data
     data = latest_data[latest_data['place'] == place]
     return data.iloc[-1] if not data.empty else None
 
 def get_all_from_place(place):
+    """Get all data for a specific place"""
     global latest_data
     data = latest_data[latest_data['place'] == place]
     df = pd.DataFrame(data, columns=['hour', 'place', 'value', 'latitude', 'longitude'])
     return df
 
 def create_dataframes():
-    """Cria um DataFrame consolidado para os locais."""
+    """Create a consolidated DataFrame for the places."""
     global latest_data
     data = []
     for place in latest_data['place'].unique():
@@ -59,25 +58,24 @@ def create_dataframes():
     return df
 
 def fetch_and_update_data():
-    """Busca novos dados a cada minuto e atualiza o DataFrame global."""
+    """Fetch new data every minute and update the global DataFrame."""
     global latest_data
-    print("Atualizando dados...")
-    fetch.data_processing()
+    print("Updating data...")
     latest_data = update_data()
-    print("Dados atualizados!")
+    print("Data updated!")
 
-# Inicializa os dados
+# Initialize data
 fetch_and_update_data()
 latest_data = update_data()
 
-# Configura o agendador para atualizar os dados a cada 5 minutos
+# Set up the scheduler to update data every 5 minutes
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=fetch_and_update_data, trigger="interval", minutes=5)
 scheduler.start()
 
 selected_place = "Lisboa"
 
-# Cria a aplicaÃ§Ã£o Dash
+# Create the Dash app
 app = dash.Dash(__name__, title="Radioactivity Dashboard")
 
 app.layout = html.Div([
@@ -100,7 +98,8 @@ app.layout = html.Div([
                     dcc.Graph(
                         id='history-graph',
                     )
-            ])
+                ]
+            )
         ]
     ),
     dcc.Graph(
@@ -128,10 +127,10 @@ app.layout = html.Div([
     Input('title-dropdown', 'value')
 )
 def update_dropdown(selected_place):
-    """Atualiza as opÃ§Ãµes do dropdown com os locais disponÃ­veis."""
+    """Update the dropdown options with the available places."""
     dropdown_options = [{'label': place, 'value': place} for place in latest_data['place'].unique()]
 
-    # Define o valor inicial como Lisboa se nÃ£o houver seleÃ§Ã£o
+    # Set the initial value to "Lisboa" if not selected
     if selected_place is None:
         initial_value = "Lisboa"
     else:
@@ -143,7 +142,7 @@ def update_dropdown(selected_place):
     Output("history-graph", "figure"), 
     Input("title-dropdown", "value"))
 def update_history_graph(place):
-    """Atualiza o grÃ¡fico histÃ³rico com base no local selecionado."""
+    """Update the history graph based on the selected place."""
     selected_place = place if place is not None else selected_place
     fig = px.line(
         get_all_from_place(selected_place),
@@ -158,15 +157,16 @@ def update_history_graph(place):
     Input('interval-component', 'n_intervals')
 )
 def update_map(n_intervals):
-    figure=go.Figure(
+    """Update the map with the latest data."""
+    figure = go.Figure(
         data=go.Scattermapbox(
             lat=create_dataframes()['latitude'],
             lon=create_dataframes()['longitude'],
             mode='markers',
             marker=dict(
-                size=(create_dataframes()['value'] / 9) + 5,  # Ajustar o tamanho dos marcadores
+                size=(create_dataframes()['value'] / 9) + 5,  # Adjust marker size
                 color=create_dataframes()['value'],
-                colorscale='Viridis',  # Escala de cores para os marcadores
+                colorscale='Viridis',  # Color scale for the markers
                 colorbar=dict(
                     title='Radioactivity'
                 )
@@ -174,15 +174,15 @@ def update_map(n_intervals):
             text=create_dataframes()['value'],
             customdata=create_dataframes()[['hour', 'place', 'value']],
             hovertemplate=(
-                "<b>Hora:</b> %{customdata[0]}<br>"
-                "<b>Local:</b> %{customdata[1]}<br>"
-                "<b>Valor:</b> %{customdata[2]} nSv/h<br>"
+                "<b>Hour:</b> %{customdata[0]}<br>"
+                "<b>Place:</b> %{customdata[1]}<br>"
+                "<b>Value:</b> %{customdata[2]} nSv/h<br>"
                 "<extra></extra>"
             )
         ),
         layout=go.Layout(
             mapbox=dict(
-                style="open-street-map",  # Estilo do mapa
+                style="open-street-map",  # Map style
                 center=dict(lat=create_dataframes()['latitude'].mean(), lon=create_dataframes()['longitude'].mean()),
                 zoom=5
             ),
