@@ -31,6 +31,8 @@ conn = mysql.connector.connect(
     database=database_name
 )
 cursor = conn.cursor()
+cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database_name}")
+cursor.execute(f"USE {database_name}")
 
 # Create table if it doesn't exist
 create_table_query = f'''
