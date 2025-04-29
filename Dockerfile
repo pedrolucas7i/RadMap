@@ -1,23 +1,31 @@
-# Utiliza uma imagem oficial do Python como base
+# Use an official Python image as the base
 FROM python:3.12.6-slim
 
-# Define o diretório de trabalho dentro do contêiner
+# Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copia o arquivo requirements.txt para o contêiner
+# Copy the requirements.txt file to the container
 COPY requirements.txt ./
 
-# Instala as dependências listadas no requirements.txt
+# Install the dependencies listed in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código da aplicação para o contêiner
+# Copy the rest of the application code to the container
 COPY . .
 
-# Expor a porta 8050 para que o Dash possa ser acessado
+# Ensure the MariaDB client library is available if needed
+RUN apt-get update && \
+    apt-get install -y default-libmysqlclient-dev gcc && \
+    pip install mysqlclient && \
+    apt-get remove -y gcc && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Expose port 8050 for Dash to be accessible
 EXPOSE 8050
 
-# Define a variável de ambiente para desativar o modo de debug no Dash
+# Set the environment variable to disable Dash debug mode
 ENV DASH_DEBUG_MODE False
 
-# Comando para iniciar a aplicação
+# Command to start the application
 CMD ["python", "app.py"]

@@ -8,27 +8,29 @@ services:
       - "8050:8050"
     env_file: .env
     depends_on:
-      - mongodb
+      - mariadb
     volumes:
       - .:/usr/src/app
     networks:
       - backend
 
-  mongodb:
-    image: mongodb/mongodb-community-server:latest
-    container_name: radmap
+  mariadb:
+    image: mariadb:latest
+    container_name: radmap_db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root      # YOUR MONGODB USER
-      MONGO_INITDB_ROOT_PASSWORD: password  # YOUR MONGODB PASSWORD
+      MYSQL_ROOT_PASSWORD: password       # Your MariaDB root password
+      MYSQL_DATABASE: radmap              # Optional: Pre-create database
+      MYSQL_USER: root                    # Optional: Create user
+      MYSQL_PASSWORD: password            # Optional: Set user password
     ports:
-      - "27017:27017"
+      - "3306:3306"
     volumes:
-      - mongodb_data:/data/db
+      - mariadb_data:/var/lib/mysql
     networks:
       - backend
 
 volumes:
-  mongodb_data:
+  mariadb_data:
 
 networks:
   backend:
